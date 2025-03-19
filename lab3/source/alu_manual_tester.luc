@@ -1,0 +1,352 @@
+module alu_manual_tester (
+    input clk,  // clock
+    input rst,  // reset
+    input io_button[5],
+    input io_dip[3][8],
+    output io_led[3][8],
+    output io_segment[8],
+    output io_select[4],
+    output led[8]
+) {
+    
+    enum States{
+        FA, //first 16 bits of A
+        LA, //last 16 bits of A
+        FB, //first 16 bits of B
+        LB,  //last 16 bits of B
+        F_IDLE,
+        L_IDLE,
+        
+        AUTOTESTER
+    }
+    const CLK_FREQ = $is_sim() ? 1000 : 10000000
+  
+    const SEVEN_SEG_DIV = $is_sim() ? 3 : 16 // put 6 for sim, 16 on hardware
+    const SLOW_CLOCK_DEFAULT_SPEED = $is_sim() ? 8 : 28 // put 8  for sim, 28 for hardware
+    .clk(clk) {
+        // The reset conditioner is used to synchronize the reset signal to the FPGA
+        // clock. This ensures the entire FPGA comes out of reset at the same time.
+        
+        edge_detector io_button_edge[5](#RISE(5x{{1}}), #FALL(5x{{0}}))
+        
+        button_conditioner io_button_cond[5](#CLK_FREQ(5x{{CLK_FREQ}})) 
+        
+        .rst(rst) {
+            multi_seven_seg seg(#DIV(SEVEN_SEG_DIV)) 
+            
+            dff states[$width(States)](#INIT(States.F_IDLE))
+            dff alu_a_reg[32];    // 32-bit register to store alu.a across states
+            dff alu_b_reg[32];    // 32-bit register to store alu.b across states
+            
+            dff counter[5](#INIT(0))  // 5-bit counter for test cases (0-31)
+            
+            // Clock divider for slower increments
+            dff clock_divider[SLOW_CLOCK_DEFAULT_SPEED](#INIT(0))
+            dff slow_clock(#INIT(0))
+            
+            // For storing test results
+            dff test_passed(#INIT(0))
+            dff current_test_index[5](#INIT(0))
+        }
+    }
+    
+    bin_to_dec decimal_renderer(#DIGITS(4), #LEADING_ZEROS(1))
+    alu alu
+    
+    // Test cases - Define structures for consistent dimensions
+    //not working are 32hFFFFFFFF, 32d10, 32d5, 32d10, 32hAAAA, 32hFF00, 32hAAAA, 32hFF00, 32hFF00, 32d5, 32d20,
+    const A_VALUES = {
+        
+        32d10, 32d25, 32d255, 32hFFFFFFFF,  // Addition
+        32d20, 32d5, 32d0,                  // Subtraction
+        32d5, 32d100,                       // Multiplication
+        32hFF00, 32hAAAA,                   // AND
+        32hFF00, 32hAAAA,                   // OR
+        32hFF00, 32hAAAA,                   // XOR
+        32hF0F0, 32h3241,                   // A
+        32d1, 32d5,                         // Shift left
+        32d16, 32d100,                      // Shift right logical
+        32hF0000000,                        // Shift right arithmetic
+        32d10, 32d5, 32d10,                 // Less than or equal to
+        32d5, 32d10, 32d10,                 // Less than
+        32d10, 32d10, 32hFFFFFFFF,           // Equal
+        32d5
+    };
+    
+    const B_VALUES = {
+        
+        32d5, 32d50, 32d1, 32d1,            // Addition
+        32d5, 32d20, 32d1,                  // Subtraction
+        32d10, 32d100,                      // Multiplication
+        32h0FF0, 32h5555,                   // AND
+        32h0FF0, 32h5555,                   // OR
+        32h0FF0, 32h5555,                   // XOR
+        32h0FF0, 32h5555,                   // A
+        32d4, 32d2,                         // Shift left
+        32d2, 32d3,                         // Shift right logical
+        32d4,                               // Shift right arithmetic
+        32d5, 32d10, 32d10,                 // Less than or equal to
+        32d10, 32d5, 32d10,                 // Less than
+        32d10, 32d5, 32hFFFFFFFF,            // Equal
+        32d5
+    };
+    
+    const ALUFN_VALUES = {
+        
+        6b000000, 6b000000, 6b000000, 6b000000,  // Addition
+        6b000001, 6b000001, 6b000001,            // Subtraction
+        6b000010, 6b000010,                      // Multiplication
+        6b011000, 6b011000,                      // AND
+        6b011110, 6b011110,                      // OR
+        6b010110, 6b010110,                      // XOR
+        6b011010, 6b011010,
+        6b100000, 6b100000,                      // Shift left
+        6b100001, 6b100001,                      // Shift right logical
+        6b100011,                                // Shift right arithmetic
+        6b110111, 6b110111, 6b110111,            // Less than or equal to
+        6b110101, 6b110101, 6b110101,            // Less than
+        6b110011, 6b110011, 6b110011,             // Equal
+        6b000000
+    };
+    
+    const EXPECTED_VALUES = {
+        
+        32d15, 32d075, 32d256, 32d0,                 // Addition
+        32d15, 32hFFFFFFF1, 32hFFFFFFFF,            // Subtraction check 32hFFFFFFF1
+        32d50, 32d10000,                            // Multiplication
+        32h0F00, 32h0000,                           // AND
+        32hFFF0, 32hFFFF,                           // OR
+        32hF0F0, 32hFFFF,                           // XOR
+        32hF0F0, 32h3241,                           // A
+        32d16, 32d20,                               // Shift left
+        32d4, 32d12,                                // Shift right logical
+        32hFF000000,                                // Shift right arithmetic
+        32d0, 32d1, 32d1,                           // Less than or equal to
+        32d1, 32d0, 32d0,                           // Less than
+        32d1, 32d0, 32d1,                            // Equal
+        32d10
+    };
+    
+    // Number of test cases
+    const NUM_TESTS = 32 // Update this if the arrays change MAX is 32
+    sig idk
+    sig idk2[32]
+    
+    always {
+        // Clock divider logic
+        clock_divider.d = clock_divider.q + 1;
+        slow_clock.d = slow_clock.q;
+        
+        // Generate a slow clock pulse
+        if (clock_divider.q == 0) {
+            slow_clock.d = ~slow_clock.q;
+        }
+        
+        // Default: Keep counter value the same
+        counter.d = counter.q;
+        current_test_index.d = current_test_index.q;
+        test_passed.d = test_passed.q;
+        
+        
+        
+        led = 8h00; // Turn off LEDs by default
+        alu_a_reg.d = alu_a_reg.q; 
+        alu_b_reg.d = alu_b_reg.q;
+        
+        // Default ALU connections
+        alu.a = alu_a_reg.q;
+        alu.b = alu_b_reg.q;
+        alu.alufn = io_dip[2][5:0];
+        
+        io_button_cond.in = io_button;
+        io_button_edge.in = io_button_cond.out;
+        states.d = states.q;
+        
+        // implement alu tester logic here
+        if (io_dip[2][6] == 1){
+            idk = ~alu.out[0]
+        }else{
+            idk = alu.out[0]
+        }
+        idk2 = 32b0
+        io_led = 3x{{8h0}};
+        io_segment = 0;
+        io_select = 4hF;
+        io_led[0] = c{alu.out[7:1], idk};
+        io_led[1] = alu.out[15:8];
+        //io_led[2][4:0] = alu.out[20:16];
+        io_led[2][7] = alu.z;
+        io_led[2][6] = alu.v;
+        io_led[2][5] = alu.n;
+        if (io_dip[2][5:4] == 2b01){
+            decimal_renderer.value = 0000
+        }else{
+            if (|alu.out[31:12] == 1){
+                decimal_renderer.value = 9999
+            }else{
+                
+                // shows max of 2^8 bits on the screen 
+                decimal_renderer.value = c{alu.out[12:1] , idk}
+            }
+        }
+        
+        
+        seg.values = decimal_renderer.digits;
+        io_segment = ~seg.seg;
+        io_select = ~seg.sel;
+        
+        // In AUTOTESTER state, run auto tests
+        /*
+        if (states.q == States.AUTOTESTER) {
+            // Set the test inputs from arrays
+            
+            
+            if (current_test_index.q < NUM_TESTS) {
+                alu.a = A_VALUES[current_test_index.q];
+                alu.b = B_VALUES[current_test_index.q];
+                alu.alufn = ALUFN_VALUES[current_test_index.q];
+                
+                // Check if output matches expected
+                if (alu.out == EXPECTED_VALUES[current_test_index.q]) {
+                    test_passed.d = 1;
+                    led = 8hFF; // Light all LEDs if test passes
+                } else {
+                    test_passed.d = 0;
+                    led = 8h55; // Turn off LEDs if test fails
+                }
+                
+                // Update seven segment display to show current test index
+                decimal_renderer.value = current_test_index.q;
+                
+                // Move to next test on slow clock edge
+                if (clock_divider.q == 0 && slow_clock.q == 0) {
+                    current_test_index.d = current_test_index.q + 1;
+                }
+            }
+            
+            else {
+                // All tests completed, show result
+                if (test_passed.q) {
+                    led = 8hFF; // All passed
+                } 
+                else {
+                    led = 8h55; // Blink pattern to indicate failure
+                }
+                states.d = States.IDLE
+                
+                // Restart tests if button pressed
+                
+                if (io_button_edge.out[1]) {
+                    current_test_index.d = 0;
+                }
+                
+            }
+            
+        }
+        */
+        case(states.q){
+            States.F_IDLE:
+                io_led[0] = c{alu.out[7:1], idk};
+                io_led[1] = alu.out[15:8];
+                if (io_button_edge.out[0]){
+                    states.d = States.LA;
+                    }
+                else if (io_button_edge.out[1]){
+                    states.d = States.AUTOTESTER;
+                    // Reset test index and counter when entering AUTOTESTER state
+                    current_test_index.d = 0;
+                    counter.d = 0;
+                    test_passed.d = 1; // Start with pass assumption
+                    }
+                else if (io_button_edge.out[2]){
+                    states.d = States.FA
+                }
+                else if (io_button_edge.out[3]){
+                    states.d = States.LB;
+                    }
+                else if (io_button_edge.out[4]){
+                    states.d = States.FB;
+                    }
+            
+            States.L_IDLE:
+                io_led[0] = alu.out[23:16];
+                io_led[1] = alu.out[31:24];
+                if (io_button_edge.out[0]){
+                    states.d = States.LA;
+                    }
+                else if (io_button_edge.out[1]){
+                    states.d = States.AUTOTESTER;
+                    // Reset test index and counter when entering AUTOTESTER state
+                    current_test_index.d = 0;
+                    counter.d = 0;
+                    test_passed.d = 1; // Start with pass assumption
+                    }
+                else if (io_button_edge.out[2]){
+                    states.d = States.FA
+                }
+                else if (io_button_edge.out[3]){
+                    states.d = States.LB;
+                    }
+                else if (io_button_edge.out[4]){
+                    states.d = States.FB;
+                    }    
+                
+            States.FA:
+                alu_a_reg.d[15:0] = c{io_dip[1][7:0], io_dip[0][7:0]};
+                states.d = States.F_IDLE
+                     
+            States.LA:
+                alu_a_reg.d[31:16] = c{io_dip[1][7:0], io_dip[0][7:0]};
+                states.d = States.L_IDLE
+                
+            States.LB:
+                alu_b_reg.d[31:16] = c{io_dip[1][7:0], io_dip[0][7:0]};
+                states.d = States.L_IDLE
+                
+            States.FB:
+                alu_b_reg.d[15:0] = c{io_dip[1][7:0], io_dip[0][7:0]};
+                states.d = States.F_IDLE
+                
+            States.AUTOTESTER:
+                io_led[0] = c{alu.out[7:1], idk};
+                io_led[1] = alu.out[15:8];
+                if (current_test_index.q < NUM_TESTS) {
+                    alu.a = A_VALUES[current_test_index.q];
+                    alu.b = B_VALUES[current_test_index.q];
+                    alu.alufn = ALUFN_VALUES[current_test_index.q];
+                    idk2 = c{alu.out[31:1], idk} 
+                // Check if output matches expected
+                    if (idk2 == EXPECTED_VALUES[current_test_index.q]) {
+                        test_passed.d = 1;
+                        led = 8hFF; // Light all LEDs if test passes
+                    } else {
+                        test_passed.d = 0;
+                        led = 8h55; // Turn off LEDs if test fails
+                    }
+                
+                // Update seven segment display to show current test index
+                    decimal_renderer.value = current_test_index.q;
+                
+                // Move to next test on slow clock edge
+                    if (clock_divider.q == 0 && slow_clock.q == 0) {
+                        current_test_index.d = current_test_index.q + 1;
+                    }
+                }else {
+                    // All tests completed, show result
+                    if (test_passed.q) {
+                        led = 8hFF; // All passed
+                    } 
+                    else {
+                        led = 8h55; // Blink pattern to indicate failure
+                    }
+                    
+                    // Allow exit from AUTOTESTER state
+                }
+                if(io_button_edge.out[2]){
+                        states.d = States.FA;
+                    }
+            
+            
+        }
+    }
+}

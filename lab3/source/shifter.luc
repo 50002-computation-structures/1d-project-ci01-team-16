@@ -1,0 +1,205 @@
+module shifter (
+    input a[32],
+    input b[5],
+    input alufn[6],
+    output shift[32]
+) {
+    // Declare shifter components
+    //x_bit_left_shifter xbitleftshift[5](#SHIFT({5d1,5d2,5d4,5d8,5d16}))  // 1-bit left shift
+    // Shifter components for 1, 2, 4, 8, 16 bit shifts
+    x_bit_left_shifter shift1(#SHIFT(1));
+    x_bit_left_shifter shift2(#SHIFT(2)); 
+    x_bit_left_shifter shift4(#SHIFT(4));
+    x_bit_left_shifter shift8(#SHIFT(8));
+    x_bit_left_shifter shift16(#SHIFT(16));
+    
+    // Right shift implementation for SHR and SHA
+    sig right_shift_a[32];
+    sig arithmetic_fill;
+    
+    // Intermediate signals for cascade shifts
+    sig s1_out[32];
+    sig s2_out[32];
+    sig s3_out[32];
+    sig s4_out[32];
+
+    
+    
+    
+    
+    always {
+        /*
+        xbitleftshift.a = 5x{{32b0}}
+        xbitleftshift.shift = 0 
+        xbitleftshift.pad = 0
+        shift = xbitleftshift.out[0]
+        
+        case(alufn[1:0]){
+            b00:
+            repeat(i,5){
+            if(i==0){
+                xbitleftshift.a[i] = a
+                xbitleftshift.shift[i] = b[i] 
+                xbitleftshift.pad[i] = 0
+                        
+                    }
+            else{
+                xbitleftshift.a[i] = xbitleftshift.out[i-0]
+                xbitleftshift.shift[i] = b[i] 
+                xbitleftshift.pad[i] = 0    
+                    }
+                }
+            shift = xbitleftshift.out[4]
+            */
+        // Default values
+        // Initialize all signals with default values to avoid "partially driven" errors
+        shift = a;  // Default output
+        right_shift_a = a;  // Default value
+        arithmetic_fill = 0;  // Default value
+        
+        // Initialize all shifter inputs with default values
+        shift1.a = a;
+        shift1.shift = 0;
+        shift1.pad = 0;
+        
+        shift2.a = a;
+        shift2.shift = 0;
+        shift2.pad = 0;
+        
+        shift4.a = a;
+        shift4.shift = 0;
+        shift4.pad = 0;
+        
+        shift8.a = a;
+        shift8.shift = 0;
+        shift8.pad = 0;
+        
+        shift16.a = a;
+        shift16.shift = 0;
+        shift16.pad = 0;
+        
+        // Initialize intermediate outputs
+        s1_out = a;
+        s2_out = a;
+        s3_out = a;
+        s4_out = a;
+        
+        // Handle different shift operations based on alufn[1:0]
+        case(alufn[1:0]) {
+            2b00:  // SHL - Shift Left
+                // Connect first shifter
+                shift1.a = a;
+                shift1.shift = b[0];
+                shift1.pad = 0;
+                s1_out = shift1.out;
+                
+                // Connect second shifter
+                shift2.a = s1_out;
+                shift2.shift = b[1];
+                shift2.pad = 0;
+                s2_out = shift2.out;
+                
+                // Connect third shifter
+                shift4.a = s2_out;
+                shift4.shift = b[2];
+                shift4.pad = 0;
+                s3_out = shift4.out;
+                
+                // Connect fourth shifter
+                shift8.a = s3_out;
+                shift8.shift = b[3];
+                shift8.pad = 0;
+                s4_out = shift8.out;
+                
+                // Connect fifth shifter
+                shift16.a = s4_out;
+                shift16.shift = b[4];
+                shift16.pad = 0;
+                shift = shift16.out;
+            
+            2b01:  // SHR - Shift Right (logical)
+                // For right shifts, reverse bits, left shift, then reverse again
+                repeat(i, 32) {
+                    right_shift_a[i] = a[31-i]; // Reverse bits
+                }
+                
+                // Use left shifters for right shifts
+                shift1.a = right_shift_a;
+                shift1.shift = b[0];
+                shift1.pad = 0;
+                s1_out = shift1.out;
+                
+                shift2.a = s1_out;
+                shift2.shift = b[1];
+                shift2.pad = 0;
+                s2_out = shift2.out;
+                
+                shift4.a = s2_out;
+                shift4.shift = b[2];
+                shift4.pad = 0;
+                s3_out = shift4.out;
+                
+                shift8.a = s3_out;
+                shift8.shift = b[3];
+                shift8.pad = 0;
+                s4_out = shift8.out;
+                
+                shift16.a = s4_out;
+                shift16.shift = b[4];
+                shift16.pad = 0;
+                
+                // Reverse bits back
+                repeat(i, 32) {
+                    shift[i] = shift16.out[31-i];
+                }
+            
+            
+            2b11:  // SHA - Shift Right Arithmetic
+                // Arithmetic shift uses MSB as pad value
+                arithmetic_fill = a[31];
+                
+                // For right shifts, reverse bits, left shift with sign bit padding, then reverse again
+                repeat(i, 32) {
+                    right_shift_a[i] = a[31-i]; // Reverse bits
+                }
+                
+                // Use left shifters for right shifts with sign bit padding
+                shift1.a = right_shift_a;
+                shift1.shift = b[0];
+                shift1.pad = arithmetic_fill;
+                s1_out = shift1.out;
+                
+                shift2.a = s1_out;
+                shift2.shift = b[1];
+                shift2.pad = arithmetic_fill;
+                s2_out = shift2.out;
+                
+                shift4.a = s2_out;
+                shift4.shift = b[2];
+                shift4.pad = arithmetic_fill;
+                s3_out = shift4.out;
+                
+                shift8.a = s3_out;
+                shift8.shift = b[3];
+                shift8.pad = arithmetic_fill;
+                s4_out = shift8.out;
+                
+                shift16.a = s4_out;
+                shift16.shift = b[4];
+                shift16.pad = arithmetic_fill;
+                
+                // Reverse bits back
+                repeat(i, 32) {
+                    shift[i] = shift16.out[31-i];
+                }
+            
+            
+            default: 
+                shift = a; // No shift by default
+            
+            
+        }
+    }
+}
+        
+    

@@ -1,0 +1,42 @@
+// A full adder combinational logic unit 
+module fa (
+    input a,
+    input b,
+    input cin,
+    output s,
+    output cout
+) {
+    
+    always {
+        cout = 0
+        // implement 1-bit full adder logic here
+        if (a == 1 && b==0 && cin == 0){
+            s = 1
+        }
+        else if (a == 0 && b==1 && cin == 0){
+            s = 1
+        }
+        else if (a == 0 && b==0 && cin == 1){
+            s = 1
+        }
+        else if (a == 1 && b == 1 && cin == 1){
+            s = 1
+        }
+        else{
+            s = 0
+        }
+        if (a == 1 && b == 1){
+            cout = 1
+        }
+        else if (b == 1 && cin == 1){
+            cout = 1
+        }
+        else if (a == 1 && cin == 1){
+            cout = 1
+        }
+        else{
+            cout = 0
+        }
+    }
+    
+}
