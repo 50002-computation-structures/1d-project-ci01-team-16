@@ -1,0 +1,360 @@
+module game_cu (
+    input clk,  // clock
+    input rst,  // reset
+    input score_multiplier,
+    input decrease_timer,
+    input regfile_rd2[32], //direct reading of regfile data from rd2
+    
+    input p1_button_A,
+    input p1_button_B,
+    input p2_button_A,
+    input p2_button_B,
+    
+    output alufn[6],
+    output asel[3],
+    output bsel[3],
+    output regfile_wa[3],
+    output regfile_ra1[3],
+    output regfile_ra2[3],
+    output regfile_we,
+    output alu_out_sel[2],
+    output debug[4]
+) {
+    enum GameStates {
+        START_SET_TIMER,
+        IDLE,
+        INCREASE_P1_SCORE_BUTTON_A,
+        INCREASE_P1_SCORE_BUTTON_B,
+        INCREASE_P2_SCORE_BUTTON_A,
+        INCREASE_P2_SCORE_BUTTON_B,
+        CHECK_GAME_TIMER_10,
+        BRANCH_GAME_TIMER_MUL,
+        SCORE_MULTIPLIER,
+        CHECK_GAME_TIMER_0,
+        BRANCH_GAME_TIMER_END,
+        DECREASE_GAME_TIMER,
+        CHECK_DRAW,
+        BRANCH_DRAW,
+        CHECK_WINNER,
+        BRANCH_WINNER,
+        P1WINS,
+        P2WINS,
+        P1LOSE,
+        P2LOSE,
+        
+        CHECK_BRANCH_HIGHEST_1,
+        DRAW,
+        CHECK_BRANCH_HIGHEST_2,
+        BRANCH_HIGHEST,
+        SHOW_HIGHEST,
+        GAME_OVER //24 states
+    }
+    .clk(clk) {
+        .rst(rst) {
+    dff game_fsm[$width(GameStates)](#INIT(GameStates.START_SET_TIMER))
+    
+    dff p1_buttonpressed[2]
+    dff p2_buttonpressed[2]
+        }
+    }
+    always {
+
+    // standard setting unless otherwise overwritten by each case 
+            alufn = 0
+            asel = 0 
+            bsel = 0
+            regfile_we = 0
+            regfile_wa = d4
+            regfile_ra1 = d0
+            regfile_ra2 = d0
+            alu_out_sel = 0
+
+
+            debug = b0000
+
+        game_fsm.d = game_fsm.q
+        p1_buttonpressed.d = p1_buttonpressed.q
+        p2_buttonpressed.d = p2_buttonpressed.q
+        //p1_buttonpressed.d = 0
+        //p2_buttonpressed.d = 0
+
+        if (rst){
+                game_fsm.d = GameStates.START_SET_TIMER
+                p1_buttonpressed.d = 0
+                p2_buttonpressed.d = 0
+            }
+        else{
+
+                case(game_fsm.q){
+
+                GameStates.START_SET_TIMER: 
+                    alufn = b011010               //A
+                    asel = b11                    //30
+                    regfile_we = 1 
+                    regfile_wa = d3               //timer reg
+                    regfile_ra2 = d3              //direct read (temp reg)
+                    
+                    //if counter is set
+                    if (regfile_rd2[4] ){          //direct read in // NOTSURE!!
+                    //if (regfile_rd2==5 ){          //direct read in // NOTSURE!!
+                        game_fsm.d = GameStates.IDLE
+                        //game_fsm.d = GameStates.SCORE_MULTIPLIER
+                    }
+                    else{
+                        game_fsm.d =  GameStates.START_SET_TIMER
+                    }
+
+                GameStates.IDLE:
+                    //if (decrease_timer & score_multiplier){
+                    if (decrease_timer){
+                        game_fsm.d = GameStates.CHECK_GAME_TIMER_0
+                    
+                        //game_fsm.d = GameStates.DECREASE_GAME_TIMER
+                        
+                       
+                    }
+                    //else if (1){
+                    else if (score_multiplier){
+                        game_fsm.d = GameStates.CHECK_GAME_TIMER_10
+                        //game_fsm.d = GameStates.SCORE_MULTIPLIER
+                        debug = b1111
+                    }
+                    else if (p1_button_A && ~p1_button_B && ~p2_button_A && ~p2_button_B &&(p1_buttonpressed.q==0 || p1_buttonpressed.q==2)){
+                        game_fsm.d = GameStates.INCREASE_P1_SCORE_BUTTON_A
+                        p1_buttonpressed.d=1
+                    }
+                    else if (~p1_button_A && p1_button_B && ~p2_button_A && ~p2_button_B &&(p1_buttonpressed.q==0 || p1_buttonpressed.q==1)){
+                        game_fsm.d = GameStates.INCREASE_P1_SCORE_BUTTON_B
+                        p1_buttonpressed.d=2
+                    }
+                    else if (~p1_button_A && ~p1_button_B && p2_button_A && ~p2_button_B &&(p2_buttonpressed.q==0 || p2_buttonpressed.q==2)){
+                        game_fsm.d = GameStates.INCREASE_P2_SCORE_BUTTON_A
+                        p2_buttonpressed.d=1
+                    }
+                    else if (~p1_button_A && ~p1_button_B && ~p2_button_A && p2_button_B &&(p2_buttonpressed.q==0 || p2_buttonpressed.q==1)){
+                        game_fsm.d = GameStates.INCREASE_P2_SCORE_BUTTON_B
+                        p2_buttonpressed.d=2
+                    }
+                    else{
+                        game_fsm.d = GameStates.IDLE
+                
+                        
+                    }
+                GameStates.INCREASE_P1_SCORE_BUTTON_A:
+                    alufn = b000000             //ADD
+                    asel = b00
+                    bsel = b00
+                    regfile_we = 1
+                    regfile_ra1 = d0            //P1 score reg 
+                    regfile_ra2 = d5            //multiplier
+                    regfile_wa = d0             //P1 score reg 
+                    //p1_buttonpressed.d=1
+                
+                    game_fsm.d = GameStates.IDLE
+                GameStates.INCREASE_P1_SCORE_BUTTON_B:
+                    alufn = b000000             //ADD
+                    asel = b00
+                    bsel = b00
+                    regfile_we = 1
+                    regfile_ra1 = d0            //P1 score reg 
+                    regfile_ra2 = d5            //multiplier
+                    regfile_wa = d0             //P1 score reg 
+                    //p1_buttonpressed.d=2
+                    game_fsm.d = GameStates.IDLE
+                GameStates.INCREASE_P2_SCORE_BUTTON_A:
+                    alufn = b000000             //ADD
+                    asel = b00
+                    bsel = b00
+                    regfile_we = 1
+                    regfile_ra1 = d1            //P2 score reg 
+                    regfile_ra2 = d5            //multiplier
+                    regfile_wa = d1             //P2 score reg 
+                    //p2_buttonpressed.d=1
+                    game_fsm.d = GameStates.IDLE
+                GameStates.INCREASE_P2_SCORE_BUTTON_B:
+                    alufn = b000000             //ADD
+                    asel = b00
+                    bsel = b00
+                    regfile_we = 1
+                    regfile_ra1 = d1            //P2 score reg 
+                    regfile_ra2 = d5            //multiplier
+                    regfile_wa = d1             //P2 score reg 
+                    //p2_buttonpressed.d=2
+                    game_fsm.d = GameStates.IDLE
+                GameStates.CHECK_GAME_TIMER_10:
+                    alufn = b110011             //CMPEQ
+                    asel = b00
+                    bsel = b01                  //constant 
+                    regfile_we = 1
+                    regfile_ra1 = d3            //timer reg
+                    regfile_wa = d4             //temp reg
+                    game_fsm.d = GameStates.BRANCH_GAME_TIMER_MUL
+                    //game_fsm.d = GameStates.SCORE_MULTIPLIER
+                GameStates.BRANCH_GAME_TIMER_MUL:
+                    regfile_ra2 = d4            //temp reg
+                    if (~regfile_rd2[0]){
+                        game_fsm.d = GameStates.IDLE
+                    }
+                    else{
+                        game_fsm.d = GameStates.SCORE_MULTIPLIER
+                    }
+                GameStates.SCORE_MULTIPLIER:
+                    alufn = b000010             //multiply
+                    asel = b00
+                    bsel = b11
+                    regfile_we = 1
+                    regfile_ra1 = d5 
+                    regfile_wa = d5
+                    //d5 = 4
+                    game_fsm.d = GameStates.IDLE
+                    //game_fsm.d = GameStates.GAME_OVER
+                
+                GameStates.CHECK_GAME_TIMER_0:
+                    alufn = b110011             //CMPEQ
+                    asel = b01                  //constant 
+                    bsel = b00                  
+                    regfile_we = 1
+                    regfile_ra2 = d3            //timer reg
+                    regfile_wa = d4             //temp reg
+                    game_fsm.d = GameStates.BRANCH_GAME_TIMER_END
+                GameStates.BRANCH_GAME_TIMER_END:
+                    regfile_ra2 = d4 
+                    if (~regfile_rd2[0]){
+                        game_fsm.d = GameStates.DECREASE_GAME_TIMER
+                    }
+                    else{
+                        game_fsm.d = GameStates.CHECK_DRAW
+                    }
+                GameStates.DECREASE_GAME_TIMER:
+                    alufn = b000001             //subtract
+                    asel = b00
+                    bsel = b10
+                    regfile_we = 1
+                    regfile_ra1 = d3    
+                    regfile_wa = d3
+                    game_fsm.d = GameStates.CHECK_GAME_TIMER_10
+                    //game_fsm.d = GameStates.IDLE
+                GameStates.CHECK_DRAW:
+                    alufn = b110011             //CMPEQ
+                    asel = b00                  
+                    bsel = b00                  
+                    regfile_we = 1
+                    regfile_ra1 = d0            //p1 score
+                    regfile_ra2 = d1            //p2 score
+                    regfile_wa = d4             //temp reg
+                    game_fsm.d = GameStates.BRANCH_DRAW
+                //BRANCH_DRAW
+                GameStates.BRANCH_DRAW:
+                    regfile_ra2 = d4 
+                    if (regfile_rd2[0]){
+                        regfile_we = 1
+                        regfile_wa = d1
+                        alu_out_sel = b10
+                        debug = b1111
+                        game_fsm.d = GameStates.DRAW
+                    }
+                    else{
+                        game_fsm.d = GameStates.CHECK_WINNER
+                        //game_fsm.d = GameStates.DRAW
+                    }
+                GameStates.CHECK_WINNER:
+                    alufn = b110101                 //CMPLT
+                    asel = b00                  
+                    bsel = b00                  
+                    regfile_we = 1
+                    regfile_ra1 = d0            //p1 score
+                    regfile_ra2 = d1            //p2 score
+                    regfile_wa = d4             //temp reg
+                    //game_fsm.d = GameStates.BRANCH_WINNER
+                    game_fsm.d = GameStates.BRANCH_WINNER
+                //BRANCH_WINNER
+                GameStates.BRANCH_WINNER:
+                    regfile_ra2 = d4 
+                    if (regfile_rd2[0]){
+                        //debug = b1111
+                        game_fsm.d = GameStates.P2WINS
+                    }
+                    else{
+                        //game_fsm.d = GameStates.GAME_OVER
+                        //debug = b1111
+                        game_fsm.d = GameStates.P1WINS
+                    }
+                GameStates.P1WINS:
+                    regfile_we = 1
+                    regfile_wa = d0     //P1 score reg
+                    alu_out_sel = b01           //P1 winning signal
+                    //debug = b1111
+                    game_fsm.d = GameStates.P2LOSE
+                    //game_fsm.d = GameStates.CHECK_BRANCH_HIGHEST_1
+                GameStates.P2LOSE:
+                    regfile_we = 1
+                    regfile_wa = d1     //P1 score reg
+                    alu_out_sel = b11           //P2 lose signal
+                    //debug = b1111
+                    game_fsm.d = GameStates.GAME_OVER
+                    //game_fsm.d = GameStates.CHECK_BRANCH_HIGHEST_1
+                    
+                   
+                
+                GameStates.P2WINS:
+                    regfile_we = 1
+                    regfile_wa = d1
+                    alu_out_sel = b01
+                    //debug = b1111
+                    game_fsm.d = GameStates.P1LOSE
+                GameStates.P1LOSE:
+                    regfile_we = 1
+                    regfile_wa = d0
+                    alu_out_sel = b11
+                    //debug = b1111
+                    game_fsm.d = GameStates.GAME_OVER
+                
+                GameStates.DRAW:
+                    regfile_we = 1
+                    regfile_wa = d0
+                    alu_out_sel = b10
+                    game_fsm.d = GameStates.GAME_OVER
+                GameStates.CHECK_BRANCH_HIGHEST_1:
+                    alufn = b110101                 //CMPLT
+                    asel = b00                  
+                    bsel = b00                  
+                    regfile_we = 1
+                    regfile_ra1 = d0            //p1 score
+                    regfile_ra2 = d2            //highest score
+                    regfile_wa = d4             //temp reg
+                    game_fsm.d = GameStates.BRANCH_HIGHEST
+                GameStates.CHECK_BRANCH_HIGHEST_2:
+                    alufn = b110101                 //CMPLT
+                    asel = b00                  
+                    bsel = b00                  
+                    regfile_we = 1
+                    regfile_ra1 = d1            //p2 score
+                    regfile_ra2 = d2            //highest score
+                    regfile_wa = d4             //temp reg
+                    game_fsm.d = GameStates.BRANCH_HIGHEST
+                GameStates.BRANCH_HIGHEST:
+                    regfile_ra2 = d4 
+                    if (regfile_rd2[1]){
+                        game_fsm.d = GameStates.GAME_OVER
+                    }
+                    else{
+                        //game_fsm.d = GameStates.SHOW_HIGHEST
+                        game_fsm.d = GameStates.GAME_OVER
+                    }
+                GameStates.SHOW_HIGHEST:
+                    alufn = b110101                 //CMPLT
+                    asel = b00                  
+                    bsel = b00                  
+                    regfile_we = 1
+                    regfile_ra1 = d0            //p1 score
+                    regfile_ra2 = d1            //p1 score
+                    regfile_wa = d2             //highest score
+                    
+                    game_fsm.d = GameStates.GAME_OVER
+                GameStates.GAME_OVER:
+                    game_fsm.d = GameStates.GAME_OVER;
+            }
+        }
+    }
+}
+

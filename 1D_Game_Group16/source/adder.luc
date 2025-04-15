@@ -1,0 +1,26 @@
+module adder #(
+    SIZE ~ 32 : SIZE > 1
+)(
+    input a[SIZE],
+    input b[SIZE],
+    input alufn_signal[6],
+    output out[SIZE],
+    output z,
+    output v,
+    output n
+) {
+    rca rca(#SIZE(32))
+    sig idk
+    
+    always {
+        idk = ((b[SIZE - 1] && ~alufn_signal[0]) || (~b[SIZE - 1] && alufn_signal[0]))
+        rca.a = a
+        rca.b = b
+        rca.cin = alufn_signal[0]
+        out = rca.s
+        z = ~|rca.s
+        v = (a[SIZE - 1] && idk && ~rca.s[SIZE - 1]) || (~a[SIZE - 1] && ~idk && rca.s[SIZE - 1])
+        n = rca.s[SIZE - 1]
+    
+    }
+}

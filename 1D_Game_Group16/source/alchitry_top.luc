@@ -1,0 +1,139 @@
+module alchitry_top (
+    input clk,              // 100MHz clock
+    input rst_n,            // reset button (active low)
+    output led[8],          // 8 user controllable LEDs
+    input usb_rx,            // USB->Serial input
+    output usb_tx,           // USB->Serial output
+    output io_led[3][8],     // LEDs on IO Shield
+    output io_segment[8],        // 7-segment LEDs on IO Shield
+    output io_select[4],        // Digit select on IO Shield
+    input io_button[5],      // 5 buttons on IO Shield
+    input io_dip[3][8]       // DIP switches on IO Shield
+) {
+    
+    sig who[2]
+    sig rst                 // reset signal
+    const CLK_FREQ = $is_sim() ? 1000 : 100000000 // put 1000 for sim, 100M for hardware 
+    const SEVEN_SEG_DIV = $is_sim() ? 3 : 10 // put 3 for sim, 16 for hardware
+    const SLOW_CLOCK_DIV = $is_sim() ? 9 : 26 // put 9 for sim, 26 for hardware 
+    const FAST_CLOCK_DIV = $is_sim() ? 7 : 21 // put 7 for sim, 21 for hardware 
+    sig wincon
+    
+    .clk(clk) {
+        // The reset conditioner is used to synchronize the reset signal to the FPGA
+        // clock. This ensures the entire FPGA comes out of reset at the same time.
+        reset_conditioner reset_cond
+        edge_detector edge_dt_btn_p1A (#RISE(1), #FALL(0))
+        edge_detector edge_dt_btn_p1B (#RISE(1), #FALL(0))
+        edge_detector edge_dt_btn_p2A(#RISE(1), #FALL(0))
+        edge_detector edge_dt_btn_p2B(#RISE(1), #FALL(0))
+        
+        button_conditioner btn_cond_p1A(#CLK_FREQ(CLK_FREQ))
+        button_conditioner btn_cond_p1B(#CLK_FREQ(CLK_FREQ))
+        button_conditioner btn_cond_p2A(#CLK_FREQ(CLK_FREQ)) 
+        button_conditioner btn_cond_p2B(#CLK_FREQ(CLK_FREQ)) 
+        
+        
+        .rst(rst){
+            
+            multi_seven_seg seg(#DIV(SEVEN_SEG_DIV), #DIGITS(2))
+            //multi_seven_seg segp1(#DIV(SEVEN_SEG_DIV), #DIGITS(3))
+            //multi_seven_seg segp2(#DIV(SEVEN_SEG_DIV), #DIGITS(3))
+            game_datapath game_datapath(#SLOW_CLOCK_DIV(SLOW_CLOCK_DIV), #FAST_CLOCK_DIV(FAST_CLOCK_DIV))
+        }
+        
+    }
+    
+    seven_seg seggy
+    seven_seg seggy2
+    result_seg win
+    result_seg win2
+    //bin_to_dec bin_to_dec_converter(#DIGITS(4))
+    bin_to_dec decimal_renderer(#DIGITS(2), #LEADING_ZEROS(1))
+    //bin_to_dec decimal_rendererP1(#DIGITS(3), #LEADING_ZEROS(1))
+    //bin_to_dec decimal_rendererP2(#DIGITS(3), #LEADING_ZEROS(1))
+    always {
+        wincon = 0
+        who = 2b00
+        reset_cond.in = ~rst_n // input raw inverted reset signal
+        rst = reset_cond.out   // conditioned reset
+        
+        usb_tx = usb_rx        // loop serial port
+        
+        led = 8h00             // turn LEDs off
+        
+        io_led = 3x{{8h00}}    // turn LEDs off
+        io_segment = 8hff          // turn segments off
+        io_select = 4hf           // select no digits
+        
+        btn_cond_p1A.in = io_button[4] //to reduce the bouncing effects of your button 
+        btn_cond_p1B.in = io_button[0]
+        btn_cond_p2A.in = io_button[3]
+        btn_cond_p2B.in = io_button[2]
+        
+        edge_dt_btn_p1A.in = btn_cond_p1A.out //get the edge of button press
+        edge_dt_btn_p1B.in = btn_cond_p1B.out 
+        edge_dt_btn_p2A.in = btn_cond_p2A.out
+        edge_dt_btn_p2B.in = btn_cond_p2B.out
+        
+        game_datapath.p1_button_A = edge_dt_btn_p1A.out
+        game_datapath.p1_button_B = edge_dt_btn_p1B.out
+        game_datapath.p2_button_A = edge_dt_btn_p2A.out
+        game_datapath.p2_button_B = edge_dt_btn_p2B.out
+        
+        //update 7segments
+        seg.values = 2x{{4b0}} // default to all 0 first
+        //bin_to_dec_converter.value = game_datapath.current_counter_out
+        //seg.values = bin_to_dec_converter.digits
+        
+        
+        if (game_datapath.timer_out != 2b00){
+            decimal_renderer.value = game_datapath.timer_out // timer
+            seggy.char = decimal_renderer.digits[0]
+            win.char = 0
+            win2.char = 0
+            seggy2.char = decimal_renderer.digits[1]
+            io_segment = ~seggy.segs
+            io_led[0] = ~seggy2.segs
+            io_select = 4b1110
+            
+            
+        }else{
+            wincon = 1
+            if (game_datapath.p1_score_out == hFFFF ){
+                who = 1
+            }else if(game_datapath.p2_score_out == hFFFF){
+                who = 2
+            }else{// if(game_datapath.p1_score_out == hF) {
+                who = 3
+            }
+            decimal_renderer.value = who
+            //seg.win = wincon
+            seggy.char = 0
+            seggy2.char = 0
+            win.char = decimal_renderer.digits[0]
+            win2.char = decimal_renderer.digits[1]
+            io_segment = ~win.segs
+            io_led[0] = ~win2.segs
+            
+           // wincon = 1 
+        }
+        
+        
+        
+        
+        //io_led[2] = game_datapath.timer_out 
+        
+        
+        
+        led[0] = game_datapath.slow_clock_out
+        led[1] = game_datapath.slow_clock_out2
+        //led[7:6] = game_datapath.p1_button_press_out
+        //led[5:4] = game_datapath.p2_button_press_out
+        
+        
+        
+        led[7:4] = game_datapath.debug_general
+        
+    }
+}

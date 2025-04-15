@@ -1,0 +1,91 @@
+module alu (
+    input a[32],
+    input b[32],
+    input alufn[6],
+    output out[32],
+    output z,
+    output v,
+    output n
+    //output alu_output
+) {
+    
+    adder adder(#SIZE(32))
+    compare compare
+    boolean boolean(#SIZE(32))
+    multiplier mult
+    shifter shifter
+    
+    
+    always {
+        // Connect adder inputs
+        adder.a = a;
+        adder.b = b;
+        adder.alufn_signal = alufn;
+        
+        // Connect multiplier inputs
+        mult.a = a;
+        mult.b = b;
+        
+        // Connect shifter inputs
+        shifter.a = a;
+        shifter.b = b[4:0];  // Only need 5 bits for shift amount (0-31)
+        shifter.alufn = alufn;
+        
+        // Connect boolean inputs
+        boolean.a = a;
+        boolean.b = b;
+        boolean.alufn = alufn;
+        
+        // Connect compare inputs
+        compare.z = adder.z;
+        compare.v = adder.v;
+        compare.n = adder.n;
+        compare.alufn = alufn;
+        
+        // Implement ALU output selection based on operation
+        case(alufn[5:4]) {
+            2b00: 
+                // Arithmetic operations
+                case(alufn[1:0]) {
+                    2b00: out = adder.out;  // ADD
+                    2b01: out = adder.out;  // SUB
+                    2b10: out = mult.mul;   // MUL
+                    default: out = 32h0;
+                }
+            
+            
+            2b01: 
+                // Boolean operations
+                out = boolean.bool
+                
+            2b10: 
+                // Shift operations
+                out = shifter.shift;
+            
+            
+            2b11: 
+                // Compare operations
+                case(alufn[2:0]) {
+                    3b011: out = compare.cmp;  // AND
+                    3b101: out = compare.cmp;  // OR
+                    3b111: out = compare.cmp;   // XOR
+                    
+                    default: out = 32h0;
+                }
+                //out = compare.cmp;
+                default: out = 32h0;
+                
+            
+            
+            
+        }
+        
+        // Set flags
+        z = adder.z;
+        v = adder.v;
+        n = adder.n;
+        
+        // Set ALU output for display
+        //alu_output = boolean.bool;
+    }
+}
